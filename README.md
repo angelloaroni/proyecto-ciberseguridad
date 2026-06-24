@@ -1,33 +1,74 @@
-# Falsoniac Bank Vulnerable Web App
+# 🏦 Falsoniac Bank — Entorno vulnerable de laboratorio
 
-Aplicación web vulnerable de entrenamiento para Falsoniac Bank. Está diseñada para practicar ataques de seguridad como:
+Aplicación bancaria con vulnerabilidades intencionadas para uso académico en cursos de ciberseguridad.
 
-- DDoS (sin límites de tasa y rutas de cálculo intensivo)
-- SQL Injection (consultas construidas con concatenación insegura)
-- MITM (sitio servido en HTTP simple y cookies inseguras)
-- IDOR (acceso a cuentas/transacciones sin validación de dueño)
-- SSRF (fetch abierto a cualquier URL)
+---
 
-## Archivos
+## Requisitos
 
-- `server.js` - backend Express.js vulnerable
-- `public/` - frontend HTML estático
-- `package.json` - dependencias y script de inicio
-- `bank.db` - base de datos SQLite creada en el primer arranque
+- Node.js 18+
+- MySQL 8.x (o MariaDB 10.6+)
 
-## Ejecutar
+---
 
-1. Instalar dependencias:
+## Instalación rápida
+
+### 1. Crear la base de datos en MySQL
+
+```sql
+CREATE DATABASE falsoniac_bank CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+```
+
+### 2. Importar el schema y datos de prueba
+
+```bash
+mysql -u root -p falsoniac_bank < schema.sql
+```
+
+### 3. Configurar credenciales de conexión
+
+Edita `server.js` en el bloque `dbConfig` o usa variables de entorno:
+
+```bash
+export DB_HOST=localhost
+export DB_PORT=3306
+export DB_USER=root
+export DB_PASSWORD=tu_password
+export DB_NAME=falsoniac_bank
+```
+
+### 4. Instalar dependencias e iniciar
 
 ```bash
 npm install
-```
-
-2. Iniciar la aplicación:
-
-```bash
 npm start
 ```
 
-3. Abrir `http://localhost:3000` en el navegador.
+Accede en: **http://localhost:3000**
 
+---
+
+## Cuentas de prueba
+
+| Usuario | Contraseña   | Rol      |
+|---------|-------------|----------|
+| alice   | password123 | customer |
+| bob     | secret456   | customer |
+| carlos  | carlos2024  | customer |
+| admin   | adminpass   | admin    |
+
+---
+
+## Mapa de vulnerabilidades
+
+| Vulnerabilidad | Endpoint(s)                        | Página            |
+|----------------|------------------------------------|-------------------|
+| SQL Injection  | `POST /login`, `GET /account`      | login.html        |
+| IDOR           | `GET /account?id=X`, `/movements`  | transfer.html, movements.html |
+| SSRF           | `GET /api/fetch-rate?source=URL`   | tools.html        |
+| DoS            | `GET /api/report?depth=N`          | tools.html        |
+| MITM           | Cookie `falsoniac_session`         | todas las páginas |
+
+---
+
+> ⚠ **USO EXCLUSIVO EN ENTORNOS CONTROLADOS DE LABORATORIO**

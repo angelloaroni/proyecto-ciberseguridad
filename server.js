@@ -2,35 +2,76 @@
  * =============================================================================
  * FALSONIAC BANK — Servidor vulnerable de demostración académica
  * Propósito: Entorno controlado de ciberseguridad — NO usar en producción
+ * Base de datos: MySQL (mysql2)
  * =============================================================================
  *
  * Vulnerabilidades presentes:
- *  [1] SQL Injection  — /login, /account, /transaction/:id
+ *  [1] SQL Injection  — /login, /account, /transaction/:id, /movements
  *  [2] IDOR           — /account?id=X, /transaction/:id, /movements
  *  [3] SSRF           — /api/fetch-rate
  *  [4] DDoS           — /api/report (sin rate-limit ni throttle)
  *  [5] MITM           — Cookies sin Secure ni HttpOnly; HTTP plano; CORS abierto
+ *
+ * Configuración de conexión MySQL — editar las variables de entorno o el
+ * objeto `dbConfig` a continuación antes de ejecutar.
+ * =============================================================================
  */
 
-const express    = require('express');
-const sqlite3    = require('sqlite3').verbose();
-const axios      = require('axios');
-const path       = require('path');
-const bodyParser = require('body-parser');
+const express      = require('express');
+const mysql        = require('mysql2');
+const axios        = require('axios');
+const path         = require('path');
+const bodyParser   = require('body-parser');
 const cookieParser = require('cookie-parser');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
 
-// ─── Middleware ───────────────────────────────────────────────────────────────
+// =============================================================================
+// CONFIGURACIÓN DE BASE DE DATOS MYSQL
+// Puedes sobreescribir cualquier valor con variables de entorno:
+//   DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME
+// =============================================================================
+const dbConfig = {
+  host:     process.env.DB_HOST     || 'localhost',
+  port:     process.env.DB_PORT     || 3306,
+  user:     process.env.DB_USER     || 'root',
+  password: process.env.DB_PASSWORD || 'root',
+  database: process.env.DB_NAME     || 'falsoniac_bank',
+  waitForConnections: true,
+  connectionLimit:    10,
+  queueLimit:         0
+};
+
+// Pool de conexiones MySQL
+const pool = mysql.createPool(dbConfig);
+
+/**
+ * Ejecuta una query y devuelve una Promise con las filas.
+ * Se usa pool.query directamente (sin prepared statements)
+ * para mantener las vulnerabilidades de SQLi intactas.
+ */
+function query(sql, params) {
+  return new Promise((resolve, reject) => {
+    // NOTA: cuando `params` está presente se usa interpolación manual
+    // para conservar la vulnerabilidad SQLi; NO se usan placeholders.
+    pool.query(sql, (err, results) => {
+      if (err) return reject(err);
+      resolve(results);
+    });
+  });
+}
+
+// =============================================================================
+// MIDDLEWARE
+// =============================================================================
 
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 app.use(cookieParser());
 
-// [VULN-MITM] CORS abierto: cualquier origen puede hacer peticiones autenticadas.
-// En producción debería restringirse a dominios específicos.
+// [VULN-MITM] CORS completamente abierto — permite peticiones desde cualquier origen.
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
@@ -38,172 +79,124 @@ app.use((req, res, next) => {
   next();
 });
 
-// ─── Base de datos ────────────────────────────────────────────────────────────
-
-const db = new sqlite3.Database(path.join(__dirname, 'bank.db'));
-
-function setupDatabase() {
-  db.serialize(() => {
-    db.run(`CREATE TABLE IF NOT EXISTS users (
-      id       INTEGER PRIMARY KEY,
-      username TEXT UNIQUE,
-      password TEXT,        -- [VULN] contraseñas en texto plano
-      role     TEXT,
-      email    TEXT,
-      phone    TEXT
-    )`);
-
-    db.run(`CREATE TABLE IF NOT EXISTS accounts (
-      id      INTEGER PRIMARY KEY,
-      user_id INTEGER,
-      balance REAL,
-      label   TEXT,
-      type    TEXT
-    )`);
-
-    db.run(`CREATE TABLE IF NOT EXISTS transactions (
-      id         INTEGER PRIMARY KEY,
-      account_id INTEGER,
-      amount     REAL,
-      note       TEXT,
-      created_at TEXT DEFAULT (datetime('now'))
-    )`);
-
-    db.get(`SELECT COUNT(*) AS count FROM users`, (err, row) => {
-      if (err || (row && row.count > 0)) return;
-
-      // Usuarios de prueba
-      db.run(`INSERT INTO users (username, password, role, email, phone) VALUES ('alice',   'password123', 'customer', 'alice@falsoniac.com',   '987-111-001')`);
-      db.run(`INSERT INTO users (username, password, role, email, phone) VALUES ('bob',     'secret456',   'customer', 'bob@falsoniac.com',     '987-222-002')`);
-      db.run(`INSERT INTO users (username, password, role, email, phone) VALUES ('carlos',  'carlos2024',  'customer', 'carlos@falsoniac.com',  '987-333-003')`);
-      db.run(`INSERT INTO users (username, password, role, email, phone) VALUES ('admin',   'adminpass',   'admin',    'admin@falsoniac.com',   '987-000-000')`);
-
-      // Cuentas
-      db.run(`INSERT INTO accounts (user_id, balance, label, type) VALUES (1,    4520.50,   'Cuenta Corriente',  'corriente')`);
-      db.run(`INSERT INTO accounts (user_id, balance, label, type) VALUES (1,    1280.00,   'Cuenta de Ahorros', 'ahorros')`);
-      db.run(`INSERT INTO accounts (user_id, balance, label, type) VALUES (2,   16200.75,   'Cuenta Corriente',  'corriente')`);
-      db.run(`INSERT INTO accounts (user_id, balance, label, type) VALUES (3,    3050.00,   'Cuenta Corriente',  'corriente')`);
-      db.run(`INSERT INTO accounts (user_id, balance, label, type) VALUES (4, 999999.99,    'Cuenta VIP',        'vip')`);
-
-      // Movimientos
-      db.run(`INSERT INTO transactions (account_id, amount, note) VALUES (1,  -120.00, 'Pago de servicio de luz')`);
-      db.run(`INSERT INTO transactions (account_id, amount, note) VALUES (1,   500.00, 'Depósito en efectivo')`);
-      db.run(`INSERT INTO transactions (account_id, amount, note) VALUES (1,  -250.00, 'Transferencia a Carlos')`);
-      db.run(`INSERT INTO transactions (account_id, amount, note) VALUES (2,   300.00, 'Abono de nómina')`);
-      db.run(`INSERT INTO transactions (account_id, amount, note) VALUES (3,   540.00, 'Depósito recibido')`);
-      db.run(`INSERT INTO transactions (account_id, amount, note) VALUES (3,  -800.00, 'Retiro cajero')`);
-      db.run(`INSERT INTO transactions (account_id, amount, note) VALUES (4,  -200.00, 'Pago proveedor')`);
-      db.run(`INSERT INTO transactions (account_id, amount, note) VALUES (5, -9999.99, 'Transferencia internacional')`);
-    });
-  });
-}
-
-setupDatabase();
-
 // =============================================================================
 // RUTAS
 // =============================================================================
 
-// ─── Login ────────────────────────────────────────────────────────────────────
+// ─── Login ───────────────────────────────────────────────────────────────────
 // [VULN-SQLi] La query se construye con concatenación directa de strings.
-// Payload de ejemplo: usuario = ' OR '1'='1  →  bypassea la autenticación.
-app.post('/login', (req, res) => {
+// Payload: usuario = ' OR '1'='1' -- (bypassea autenticación)
+app.post('/login', async (req, res) => {
   const username = req.body.username || '';
   const password = req.body.password || '';
 
   // ⚠ Concatenación directa — vulnerable a SQL Injection
   const sql = `SELECT * FROM users WHERE username = '${username}' AND password = '${password}'`;
 
-  db.get(sql, (err, user) => {
-    if (err)  return res.status(500).json({ error: 'Error interno del servidor.' });
+  try {
+    const rows = await query(sql);
+    const user = rows[0];
+
     if (!user) return res.status(401).json({ error: 'Usuario o contraseña incorrectos.' });
 
-    // [VULN-MITM] Cookie sin Secure ni HttpOnly → interceptable en tráfico HTTP
-    //             y accesible desde JavaScript (document.cookie).
+    // [VULN-MITM] Cookie sin Secure ni HttpOnly → interceptable en HTTP y legible desde JS
     res.cookie('falsoniac_session', user.username, {
-      httpOnly: false,   // JS puede leerla → XSS viable
-      secure:   false,   // Se envía por HTTP plano → MITM viable
+      httpOnly: false,  // JS puede leerla → XSS viable
+      secure:   false,  // Sin TLS → MITM viable
       sameSite: 'Lax'
     });
 
     res.json({ success: true, username: user.username, role: user.role });
-  });
+  } catch (err) {
+    res.status(500).json({ error: 'Error interno del servidor.', detail: err.message });
+  }
 });
 
-// ─── Información del usuario autenticado ──────────────────────────────────────
-app.get('/user-info', (req, res) => {
+// ─── Información del usuario autenticado ─────────────────────────────────────
+app.get('/user-info', async (req, res) => {
   const username = req.cookies.falsoniac_session || '';
   if (!username) return res.status(401).json({ error: 'Sin sesión activa.' });
 
-  // [VULN-SQLi] username proviene de la cookie (no validada)
-  const sql = `SELECT id, username, role, email, phone FROM users WHERE username = '${username}'`;
+  // [VULN-SQLi] username viene de la cookie sin validar
+  const userSql = `SELECT id, username, role, email, phone FROM users WHERE username = '${username}'`;
 
-  db.get(sql, (err, user) => {
-    if (err)  return res.status(500).json({ error: 'Error interno.' });
+  try {
+    const users = await query(userSql);
+    const user  = users[0];
     if (!user) return res.status(404).json({ error: 'Usuario no encontrado.' });
 
-    const acctSql = `SELECT id, balance, label, type FROM accounts WHERE user_id = ${user.id}`;
-    db.all(acctSql, (acctErr, accounts) => {
-      if (acctErr) return res.status(500).json({ error: 'Error al obtener cuentas.' });
-      res.json({ user, accounts });
-    });
-  });
+    const acctSql  = `SELECT id, balance, label, type FROM accounts WHERE user_id = ${user.id}`;
+    const accounts = await query(acctSql);
+
+    res.json({ user, accounts });
+  } catch (err) {
+    res.status(500).json({ error: 'Error interno.', detail: err.message });
+  }
 });
 
 // ─── Ver cuenta por ID ────────────────────────────────────────────────────────
 // [VULN-IDOR] No se verifica que la cuenta pertenezca al usuario en sesión.
-// Cualquier usuario autenticado puede acceder a /account?id=3 (cuenta de otro).
-app.get('/account', (req, res) => {
+// [VULN-SQLi] El parámetro id se interpola directamente en la query.
+app.get('/account', async (req, res) => {
   const accountId = req.query.id;
   if (!accountId) return res.status(400).json({ error: 'Falta parámetro id.' });
 
-  // ⚠ Sin verificación de ownership — vulnerable a IDOR
+  // ⚠ Sin verificación de ownership y sin parametrizar
   const sql = `SELECT a.id, u.username, a.balance, a.label, a.type
                FROM accounts a JOIN users u ON a.user_id = u.id
-               WHERE a.id = ${accountId}`;   // también sin parametrizar → SQLi
+               WHERE a.id = ${accountId}`;
 
-  db.get(sql, (err, account) => {
-    if (err)     return res.status(500).json({ error: 'Error al buscar cuenta.' });
+  try {
+    const rows    = await query(sql);
+    const account = rows[0];
     if (!account) return res.status(404).json({ error: 'Cuenta no encontrada.' });
     res.json(account);
-  });
+  } catch (err) {
+    res.status(500).json({ error: 'Error al buscar cuenta.', detail: err.message });
+  }
 });
 
 // ─── Movimientos de una cuenta ────────────────────────────────────────────────
-// [VULN-IDOR] Igual que /account: no verifica que la cuenta sea del usuario.
-app.get('/movements', (req, res) => {
+// [VULN-IDOR] Sin verificación de que la cuenta pertenece al usuario.
+app.get('/movements', async (req, res) => {
   const accountId = req.query.account_id;
   if (!accountId) return res.status(400).json({ error: 'Falta account_id.' });
 
+  // ⚠ Sin parametrizar y sin chequeo de ownership
   const sql = `SELECT id, amount, note, created_at FROM transactions
                WHERE account_id = ${accountId} ORDER BY id DESC`;
 
-  db.all(sql, (err, rows) => {
-    if (err) return res.status(500).json({ error: 'Error al obtener movimientos.' });
+  try {
+    const rows = await query(sql);
     res.json(rows);
-  });
+  } catch (err) {
+    res.status(500).json({ error: 'Error al obtener movimientos.', detail: err.message });
+  }
 });
 
-// ─── Ver transacción individual ───────────────────────────────────────────────
-// [VULN-IDOR + SQLi] ID no validado, sin verificación de pertenencia.
-app.get('/transaction/:id', (req, res) => {
+// ─── Transacción individual ───────────────────────────────────────────────────
+// [VULN-IDOR + SQLi]
+app.get('/transaction/:id', async (req, res) => {
   const tid = req.params.id;
+
   const sql = `SELECT t.id, t.amount, t.note, t.created_at, a.label
                FROM transactions t JOIN accounts a ON t.account_id = a.id
                WHERE t.id = ${tid}`;
 
-  db.get(sql, (err, tx) => {
-    if (err) return res.status(500).json({ error: 'Error leyendo transacción.' });
-    if (!tx)  return res.status(404).json({ error: 'Transacción no encontrada.' });
+  try {
+    const rows = await query(sql);
+    const tx   = rows[0];
+    if (!tx) return res.status(404).json({ error: 'Transacción no encontrada.' });
     res.json(tx);
-  });
+  } catch (err) {
+    res.status(500).json({ error: 'Error leyendo transacción.', detail: err.message });
+  }
 });
 
 // ─── Transferencia ────────────────────────────────────────────────────────────
-// [VULN-IDOR] Cualquier usuario puede transferir desde cualquier cuenta (from=X).
-// No se valida que `from` pertenezca al usuario en sesión.
-// [VULN-DoS]  Sin límite de monto ni rate-limit; solicitudes masivas agotan la DB.
-app.post('/transfer', (req, res) => {
+// [VULN-IDOR] No se verifica que `from` pertenezca al usuario autenticado.
+// [VULN-DoS]  Sin rate-limit ni validación de monto máximo.
+app.post('/transfer', async (req, res) => {
   const from   = req.body.from   || req.query.from;
   const to     = req.body.to     || req.query.to;
   const amount = parseFloat(req.body.amount || req.query.amount);
@@ -213,26 +206,27 @@ app.post('/transfer', (req, res) => {
     return res.status(400).json({ error: 'Parámetros inválidos.' });
   }
 
-  // ⚠ Sin verificar que `from` pertenece al usuario autenticado
-  db.serialize(() => {
-    db.run(`UPDATE accounts SET balance = balance - ${amount} WHERE id = ${from}`);
-    db.run(`UPDATE accounts SET balance = balance + ${amount} WHERE id = ${to}`);
-    db.run(`INSERT INTO transactions (account_id, amount, note) VALUES (${from}, -${amount}, '${note}')`);
-    db.run(`INSERT INTO transactions (account_id, amount, note) VALUES (${to},   ${amount},  '${note}')`);
-  });
+  try {
+    // ⚠ Sin verificar ownership de `from`; sin transacción atómica protegida
+    await query(`UPDATE accounts SET balance = balance - ${amount} WHERE id = ${from}`);
+    await query(`UPDATE accounts SET balance = balance + ${amount} WHERE id = ${to}`);
+    await query(`INSERT INTO transactions (account_id, amount, note) VALUES (${from}, -${amount}, '${note}')`);
+    await query(`INSERT INTO transactions (account_id, amount, note) VALUES (${to},   ${amount},  '${note}')`);
 
-  res.json({ success: true, message: `Transferencia de S/ ${amount.toFixed(2)} realizada.` });
+    res.json({ success: true, message: `Transferencia de S/ ${amount.toFixed(2)} realizada.` });
+  } catch (err) {
+    res.status(500).json({ error: 'Error en transferencia.', detail: err.message });
+  }
 });
 
-// ─── Fetch de tipo de cambio (SSRF) ──────────────────────────────────────────
-// [VULN-SSRF] El parámetro `source` es una URL arbitraria que el servidor solicita.
-// Permite acceder a recursos internos: http://localhost:3000/account?id=5,
-// metadatos de nube (http://169.254.169.254/), servicios internos, etc.
+// ─── Tipo de cambio / SSRF ────────────────────────────────────────────────────
+// [VULN-SSRF] El servidor solicita cualquier URL que el usuario indique,
+// permitiendo acceso a recursos internos (localhost, 169.254.169.254, etc.).
 app.get('/api/fetch-rate', async (req, res) => {
   const source = req.query.source;
   if (!source) return res.status(400).json({ error: 'Falta parámetro source.' });
 
-  // ⚠ Sin validación de dominio — vulnerable a SSRF
+  // ⚠ Sin validación de dominio — SSRF directo
   try {
     const response = await axios.get(source, { timeout: 5000, responseType: 'text' });
     res.json({ url: source, data: response.data });
@@ -241,13 +235,13 @@ app.get('/api/fetch-rate', async (req, res) => {
   }
 });
 
-// ─── Reporte de estado del sistema (DDoS) ────────────────────────────────────
-// [VULN-DoS] Endpoint sin rate-limit que ejecuta cálculo pesado en el hilo principal.
-// Con muchas peticiones simultáneas colapsa el event loop de Node.js.
+// ─── Reporte del sistema / DoS ────────────────────────────────────────────────
+// [VULN-DoS] Bucle síncrono bloqueante en el event loop de Node.js.
+// Sin rate-limit: peticiones masivas paralizan el servidor.
 app.get('/api/report', (req, res) => {
   const depth = parseInt(req.query.depth, 10) || 5000000;
 
-  // ⚠ Cálculo síncrono bloqueante — bloquea el event loop de Node.js
+  // ⚠ Cálculo síncrono — bloquea el event loop mientras se ejecuta
   let total = 0;
   for (let i = 0; i < depth; i++) {
     total += Math.sqrt(i) * Math.sin(i);
@@ -256,21 +250,35 @@ app.get('/api/report', (req, res) => {
   res.json({ status: 'ok', computed: total, depth });
 });
 
+// ─── Perfil de sesión ─────────────────────────────────────────────────────────
+// [VULN-MITM] Expone el valor de la cookie en texto plano como respuesta JSON.
+app.get('/api/profile', (req, res) => {
+  const session = req.cookies.falsoniac_session || 'sin sesión';
+  res.json({
+    session_cookie: session,
+    note: 'Cookie accesible vía JS porque httpOnly=false'
+  });
+});
+
 // ─── Logout ───────────────────────────────────────────────────────────────────
 app.get('/logout', (req, res) => {
   res.clearCookie('falsoniac_session');
   res.redirect('/login.html');
 });
 
-// ─── Perfil de sesión ─────────────────────────────────────────────────────────
-// [VULN-MITM] Expone directamente el valor de la cookie en texto plano.
-app.get('/api/profile', (req, res) => {
-  const session = req.cookies.falsoniac_session || 'sin sesión';
-  res.json({ session_cookie: session, note: 'Cookie accesible via JS (httpOnly=false)' });
-});
-
 // =============================================================================
-app.listen(PORT, () => {
-  console.log(`\n🏦  Falsoniac Bank escuchando en http://localhost:${PORT}`);
-  console.log(`⚠   Aplicación VULNERABLE — sólo uso académico\n`);
+// INICIO DEL SERVIDOR
+// =============================================================================
+pool.getConnection((err, connection) => {
+  if (err) {
+    console.error('\n❌  No se pudo conectar a MySQL:', err.message);
+    console.error('    Verifica las credenciales en dbConfig o las variables de entorno.\n');
+    process.exit(1);
+  }
+  connection.release();
+  console.log('✅  Conexión a MySQL establecida correctamente.');
+  app.listen(PORT, () => {
+    console.log(`🏦  Falsoniac Bank escuchando en http://localhost:${PORT}`);
+    console.log(`⚠   Aplicación VULNERABLE — solo uso académico\n`);
+  });
 });
