@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Falsoniac Bank — Crear cuenta</title>
+  <link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+<div class="wrapper" style="max-width:480px;">
+  <div style="text-align:center;margin-bottom:24px;">
+    <a href="index.html" style="font-size:1.5rem;font-weight:800;color:#1d4ed8;">🏦 Falsoniac Bank</a>
+  </div>
+  <div class="card">
+    <h1 style="margin-bottom:4px;">Abre tu cuenta</h1>
+    <p style="color:#64748b;font-size:.9rem;margin-bottom:22px;">Completa el formulario para crear tu cuenta bancaria gratuita.</p>
+
+    <form id="registerForm">
+      <label>Nombre completo<input type="text" name="fullname" placeholder="Ej. Juan Pérez"/></label>
+      <label>Usuario<input type="text" name="username" placeholder="Ej. juan2024"/></label>
+      <label>Email<input type="email" name="email" placeholder="juan@email.com"/></label>
+      <label>Teléfono<input type="tel" name="phone" placeholder="9XX-XXX-XXX"/></label>
+      <label>
+        Contraseña
+        <!-- [MITM] La contraseña viaja en texto plano por HTTP -->
+        <input type="password" name="password" placeholder="••••••••"/>
+        <p class="hint">⚠ [MITM] La contraseña se transmite en texto plano al no usar HTTPS.</p>
+      </label>
+      <button type="submit" class="btn btn-primary btn-full">Crear cuenta</button>
+    </form>
+    <div class="alert" id="alertMsg" style="margin-top:14px;"></div>
+    <p style="font-size:.82rem;color:#64748b;margin-top:16px;">
+      (Registro demostrativo — los datos no se guardan en esta versión de laboratorio.)
+    </p>
+  </div>
+  <p style="text-align:center;margin-top:16px;font-size:.85rem;">
+    ¿Ya tienes cuenta? <a href="login.html">Inicia sesión</a>
+  </p>
+</div>
+<script>
+  document.getElementById('registerForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const al = document.getElementById('alertMsg');
+    al.textContent = 'Registro simulado exitosamente. Usa las cuentas de prueba para iniciar sesión.';
+    al.className   = 'alert alert-success visible';
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Falsoniac Bank — Movimientos</title>
+  <link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+<div class="wrapper">
+
+  <nav class="topbar">
+    <a class="brand" href="dashboard.html">🏦 Falsoniac Bank</a>
+    <div class="nav-links">
+      <a href="dashboard.html">Inicio</a>
+      <a href="transfer.html">Transferir</a>
+      <a href="/logout">Cerrar sesión</a>
+    </div>
+  </nav>
+
+  <div class="card">
+    <h1 style="margin-bottom:6px;">Historial de movimientos</h1>
+    <p style="color:#64748b;font-size:.9rem;margin-bottom:20px;">Consulta los movimientos de cualquier cuenta.</p>
+
+    <form id="movForm" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:20px;">
+      <label style="flex:1;min-width:180px;">
+        ID de cuenta
+        <!-- [IDOR] Sin verificar ownership: cualquier usuario puede consultar
+             movimientos de cuentas ajenas cambiando el account_id. -->
+        <input type="text" name="account_id" placeholder="Ej. 1" required/>
+        <p class="hint">⚠ [IDOR] <code>/movements?account_id=X</code> no valida que la cuenta sea tuya. Prueba con IDs del 1 al 5.</p>
+      </label>
+      <button type="submit" class="btn btn-primary btn-sm" style="align-self:flex-end;">Ver movimientos</button>
+    </form>
+
+    <div class="table-wrap">
+      <table id="movTable" style="display:none;">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Concepto</th>
+            <th>Monto</th>
+            <th>Fecha</th>
+          </tr>
+        </thead>
+        <tbody id="movBody"></tbody>
+      </table>
+    </div>
+    <div class="alert" id="alertMsg"></div>
+  </div>
+
+  <!-- Consulta de transacción individual -->
+  <div class="card">
+    <h2>Consultar transacción por ID</h2>
+    <form id="txForm" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+      <label style="flex:1;min-width:140px;">
+        ID de transacción
+        <input type="text" name="txid" placeholder="Ej. 1"/>
+        <p class="hint">⚠ [IDOR] <code>/transaction/:id</code> expone cualquier transacción del banco sin validar pertenencia.</p>
+      </label>
+      <button type="submit" class="btn btn-secondary btn-sm" style="align-self:flex-end;">Consultar</button>
+    </form>
+    <pre class="result-box" id="txResult"></pre>
+  </div>
+
+</div>
+<script>
+  document.getElementById('movForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const id  = e.target.account_id.value;
+    const res = await fetch(`/movements?account_id=${encodeURIComponent(id)}`);
+    const data = await res.json();
+
+    const alertEl = document.getElementById('alertMsg');
+    if (!res.ok) {
+      alertEl.textContent = data.error;
+      alertEl.className   = 'alert alert-error visible';
+      return;
+    }
+    alertEl.className = 'alert';
+
+    const table = document.getElementById('movTable');
+    const tbody = document.getElementById('movBody');
+    tbody.innerHTML = data.map(t => `
+      <tr>
+        <td>${t.id}</td>
+        <td>${t.note}</td>
+        <td class="${t.amount >= 0 ? 'mov-positive' : 'mov-negative'}">
+          ${t.amount >= 0 ? '+' : ''}S/ ${t.amount.toFixed(2)}
+        </td>
+        <td style="font-size:.8rem;color:#64748b;">${t.created_at || '—'}</td>
+      </tr>
+    `).join('');
+    table.style.display = 'table';
+  });
+
+  document.getElementById('txForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const id  = e.target.txid.value;
+    const res = await fetch(`/transaction/${encodeURIComponent(id)}`);
+    const pre = document.getElementById('txResult');
+    pre.textContent = JSON.stringify(await res.json(), null, 2);
+    pre.classList.add('visible');
+  });
+</script>
+</body>
+</html>

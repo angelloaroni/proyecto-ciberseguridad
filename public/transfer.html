@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Falsoniac Bank — Transferencia</title>
+  <link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+<div class="wrapper" style="max-width:600px;">
+
+  <nav class="topbar">
+    <a class="brand" href="dashboard.html">🏦 Falsoniac Bank</a>
+    <div class="nav-links">
+      <a href="dashboard.html">Inicio</a>
+      <a href="/logout">Cerrar sesión</a>
+    </div>
+  </nav>
+
+  <div class="card">
+    <h1 style="margin-bottom:6px;">Nueva transferencia</h1>
+    <p style="color:#64748b;font-size:.9rem;margin-bottom:22px;">Envía dinero a otra cuenta de forma rápida y segura.</p>
+
+    <form id="transferForm">
+
+      <label>
+        Cuenta de origen (ID)
+        <!-- [IDOR] No se verifica que este ID pertenezca al usuario autenticado.
+             Cualquier usuario puede poner from=5 y vaciar la cuenta Admin. -->
+        <input type="text" name="from" placeholder="Ej. 1" required/>
+        <p class="hint">⚠ [IDOR] El servidor no verifica que la cuenta origen pertenezca al usuario en sesión. Prueba con <code>from=5</code> (cuenta VIP Admin).</p>
+      </label>
+
+      <label>
+        Cuenta de destino (ID)
+        <input type="text" name="to" placeholder="Ej. 3" required/>
+      </label>
+
+      <label>
+        Monto (S/)
+        <!-- [DoS] Sin límite de monto ni rate-limit: enviar miles de
+             peticiones simultáneas colapsa el event loop de Node.js. -->
+        <input type="number" name="amount" placeholder="0.00" min="0.01" step="0.01" required/>
+        <p class="hint">⚠ [DoS] No hay rate-limit en este endpoint. Enviar ráfagas masivas de solicitudes puede saturar el servidor.</p>
+      </label>
+
+      <label>
+        Concepto / nota
+        <input type="text" name="note" placeholder="Ej. Pago de alquiler"/>
+      </label>
+
+      <button type="submit" class="btn btn-primary btn-full">Enviar transferencia</button>
+    </form>
+
+    <div class="alert" id="alertMsg"></div>
+  </div>
+
+  <!-- Consulta de cuenta ajena -->
+  <div class="card">
+    <h2>Consultar cuenta</h2>
+    <p style="font-size:.88rem;color:#64748b;margin-bottom:14px;">Verifica el saldo de una cuenta por su ID antes de transferir.</p>
+
+    <form id="accountForm" style="flex-direction:row;align-items:flex-end;gap:10px;display:flex;flex-wrap:wrap;">
+      <label style="flex:1;min-width:140px;">
+        ID de cuenta
+        <input type="text" name="id" placeholder="1, 2, 3…"/>
+      </label>
+      <button type="submit" class="btn btn-secondary btn-sm" style="align-self:flex-end;">Consultar</button>
+    </form>
+    <p class="hint" style="margin-top:10px;">⚠ [IDOR] <code>/account?id=X</code> no requiere que la cuenta sea tuya. Prueba IDs del 1 al 5.</p>
+    <pre class="result-box" id="accountResult"></pre>
+  </div>
+
+</div>
+<script>
+  const alertEl = document.getElementById('alertMsg');
+
+  document.getElementById('transferForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    alertEl.className = 'alert';
+    const body = {
+      from:   e.target.from.value,
+      to:     e.target.to.value,
+      amount: e.target.amount.value,
+      note:   e.target.note.value || 'Transferencia'
+    };
+    const res  = await fetch('/transfer', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(body)
+    });
+    const data = await res.json();
+    alertEl.textContent = data.message || data.error || JSON.stringify(data);
+    alertEl.className   = `alert ${res.ok ? 'alert-success' : 'alert-error'} visible`;
+  });
+
+  document.getElementById('accountForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const id  = e.target.id.value;
+    const res = await fetch(`/account?id=${encodeURIComponent(id)}`);
+    const pre = document.getElementById('accountResult');
+    pre.textContent = JSON.stringify(await res.json(), null, 2);
+    pre.classList.add('visible');
+  });
+</script>
+</body>
+</html>

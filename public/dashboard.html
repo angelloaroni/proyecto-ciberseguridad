@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Falsoniac Bank — Inicio</title>
+  <link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+<div class="wrapper">
+
+  <nav class="topbar">
+    <a class="brand" href="dashboard.html">🏦 Falsoniac Bank</a>
+    <div class="nav-links">
+      <a href="transfer.html">Transferir</a>
+      <a href="movements.html">Movimientos</a>
+      <a href="profile.html">Mi perfil</a>
+      <a href="tools.html">Herramientas</a>
+      <a href="/logout">Cerrar sesión</a>
+    </div>
+  </nav>
+
+  <!-- Saludo -->
+  <div class="card" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
+    <div>
+      <p style="color:#64748b;font-size:.85rem;margin-bottom:4px;">Bienvenido de vuelta,</p>
+      <h1 id="userName" style="font-size:1.6rem;">Cargando…</h1>
+      <span class="badge badge-blue" id="userRole"></span>
+    </div>
+    <div style="text-align:right;">
+      <p style="font-size:.8rem;color:#64748b;">Sesión activa</p>
+      <p style="font-size:.85rem;font-weight:600;" id="sessionInfo"></p>
+      <p class="hint" style="margin-top:6px;">⚠ [MITM] La sesión se almacena en una cookie de texto plano accesible con <code>document.cookie</code>.</p>
+    </div>
+  </div>
+
+  <!-- Cuentas -->
+  <div class="card">
+    <h2>Mis cuentas</h2>
+    <p class="hint" style="margin-bottom:16px;">⚠ [IDOR] Los IDs de cuenta se exponen en la UI. Prueba acceder a <code>/account?id=3</code> o <code>/account?id=5</code> para ver cuentas de otros usuarios.</p>
+    <div id="accountsList"><p style="color:#64748b;">Cargando cuentas…</p></div>
+  </div>
+
+  <!-- Acceso rápido -->
+  <div class="grid-2">
+    <div class="card">
+      <h2>Acceso rápido</h2>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <a href="transfer.html"  class="btn btn-primary btn-sm">💸 Nueva transferencia</a>
+        <a href="movements.html" class="btn btn-secondary btn-sm">📋 Ver movimientos</a>
+        <a href="profile.html"   class="btn btn-secondary btn-sm">👤 Editar perfil</a>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Últimas transacciones</h2>
+      <div id="lastTransactions"><p style="color:#64748b;font-size:.88rem;">Cargando…</p></div>
+    </div>
+  </div>
+
+</div>
+<script>
+  async function loadDashboard() {
+    const res  = await fetch('/user-info');
+    if (!res.ok) { window.location.href = '/login.html'; return; }
+    const data = await res.json();
+
+    document.getElementById('userName').textContent  = data.user.username;
+    document.getElementById('userRole').textContent  = data.user.role;
+    document.getElementById('sessionInfo').textContent = `Cookie: ${document.cookie}`;
+
+    // Cuentas
+    const list = document.getElementById('accountsList');
+    if (!data.accounts.length) {
+      list.innerHTML = '<p>No tienes cuentas asociadas.</p>';
+    } else {
+      list.innerHTML = data.accounts.map(a => `
+        <div class="account-card">
+          <div>
+            <div class="acct-label">${a.label}</div>
+            <div class="acct-type">${a.type} · ID: ${a.id}</div>
+          </div>
+          <div class="acct-bal">S/ ${a.balance.toFixed(2)}</div>
+        </div>
+      `).join('');
+    }
+
+    // Últimas transacciones (primera cuenta)
+    if (data.accounts.length) {
+      const txRes  = await fetch(`/movements?account_id=${data.accounts[0].id}`);
+      const txData = await txRes.json();
+      const txDiv  = document.getElementById('lastTransactions');
+      if (!txData.length) {
+        txDiv.innerHTML = '<p style="color:#64748b;font-size:.88rem;">Sin movimientos.</p>';
+      } else {
+        txDiv.innerHTML = txData.slice(0, 4).map(t => `
+          <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:.85rem;">
+            <span>${t.note}</span>
+            <span class="${t.amount >= 0 ? 'mov-positive' : 'mov-negative'}">
+              ${t.amount >= 0 ? '+' : ''}S/ ${t.amount.toFixed(2)}
+            </span>
+          </div>
+        `).join('');
+      }
+    }
+  }
+
+  loadDashboard();
+</script>
+</body>
+</html>

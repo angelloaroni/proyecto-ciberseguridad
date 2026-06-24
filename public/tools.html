@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Falsoniac Bank — Herramientas</title>
+  <link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+<div class="wrapper">
+
+  <nav class="topbar">
+    <a class="brand" href="dashboard.html">🏦 Falsoniac Bank</a>
+    <div class="nav-links">
+      <a href="dashboard.html">Inicio</a>
+      <a href="/logout">Cerrar sesión</a>
+    </div>
+  </nav>
+
+  <!-- SSRF: Tipo de cambio -->
+  <div class="card">
+    <h2>Tipo de cambio en tiempo real</h2>
+    <p style="font-size:.88rem;color:#64748b;margin-bottom:14px;">
+      Consulta el tipo de cambio desde una fuente externa. El servidor realiza la solicitud internamente.
+    </p>
+
+    <form id="rateForm">
+      <label>
+        Fuente de datos (URL)
+        <!-- [SSRF] El servidor realiza una petición GET a la URL indicada.
+             Permite acceder a recursos internos:
+               http://localhost:3000/account?id=5
+               http://169.254.169.254/latest/meta-data/  (metadatos AWS)
+               http://localhost:3000/api/profile  -->
+        <input type="text" name="source" value="https://open.er-api.com/v6/latest/USD"/>
+        <p class="hint">⚠ [SSRF] El servidor solicita esta URL sin validar el dominio. Prueba con <code>http://localhost:3000/account?id=5</code> para acceder a recursos internos.</p>
+      </label>
+      <button type="submit" class="btn btn-primary btn-sm">Consultar fuente</button>
+    </form>
+    <pre class="result-box" id="rateResult"></pre>
+  </div>
+
+  <!-- DDoS: Reporte del sistema -->
+  <div class="card">
+    <h2>Reporte de estado del sistema</h2>
+    <p style="font-size:.88rem;color:#64748b;margin-bottom:14px;">
+      Genera un informe de salud del servidor con cálculos de diagnóstico.
+      Disponible para auditores y administradores.
+    </p>
+
+    <form id="reportForm">
+      <label>
+        Profundidad de análisis (iteraciones)
+        <!-- [DoS] El endpoint ejecuta un bucle síncrono bloqueante en el
+             event loop de Node.js. Valores altos (> 50 millones) congelan
+             el servidor. Sin rate-limit: muchas peticiones simultáneas = DDoS. -->
+        <input type="number" name="depth" value="5000000" min="1000" step="1000000"/>
+        <p class="hint">⚠ [DoS] El servidor ejecuta este bucle síncronamente, bloqueando el event loop. Sin rate-limit: enviar múltiples solicitudes simultáneas simula un ataque DDoS.</p>
+      </label>
+      <button type="submit" class="btn btn-primary btn-sm">Generar reporte</button>
+    </form>
+    <div class="alert" id="reportAlert"></div>
+    <pre class="result-box" id="reportResult"></pre>
+  </div>
+
+  <!-- MITM info -->
+  <div class="card">
+    <h2>Información de comunicación</h2>
+    <p style="font-size:.88rem;color:#64748b;margin-bottom:12px;">
+      Esta sección muestra los datos de la sesión activa tal como los transmite el navegador.
+    </p>
+    <p class="hint" style="margin-bottom:14px;">
+      ⚠ [MITM] Toda la comunicación ocurre por HTTP sin TLS. Un atacante en la red puede interceptar cookies, credenciales y datos de transferencias con herramientas como Wireshark o Burp Suite.
+    </p>
+    <button class="btn btn-secondary btn-sm" onclick="showSession()">Ver cookie de sesión actual</button>
+    <pre class="result-box" id="mitResult"></pre>
+  </div>
+
+</div>
+<script>
+  // SSRF
+  document.getElementById('rateForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const source = e.target.source.value;
+    const res    = await fetch(`/api/fetch-rate?source=${encodeURIComponent(source)}`);
+    const pre    = document.getElementById('rateResult');
+    const data   = await res.json();
+    pre.textContent = JSON.stringify(data, null, 2);
+    pre.classList.add('visible');
+  });
+
+  // DoS
+  document.getElementById('reportForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const depth = e.target.depth.value;
+    const alertEl = document.getElementById('reportAlert');
+    const pre     = document.getElementById('reportResult');
+
+    alertEl.textContent = '⏳ Esperando respuesta del servidor…';
+    alertEl.className   = 'alert alert-success visible';
+
+    const res  = await fetch(`/api/report?depth=${encodeURIComponent(depth)}`);
+    const data = await res.json();
+    pre.textContent = JSON.stringify(data, null, 2);
+    pre.classList.add('visible');
+    alertEl.className = 'alert';
+  });
+
+  // MITM / sesión
+  async function showSession() {
+    const res  = await fetch('/api/profile');
+    const data = await res.json();
+    const pre  = document.getElementById('mitResult');
+    pre.textContent = `Cookie en navegador: ${document.cookie}\n\n` + JSON.stringify(data, null, 2);
+    pre.classList.add('visible');
+  }
+</script>
+</body>
+</html>
