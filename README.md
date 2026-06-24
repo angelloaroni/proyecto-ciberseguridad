@@ -31,14 +31,3 @@ npm start
 
 3. Abrir `http://localhost:3000` en el navegador.
 
-## Rutas vulnerables principales
-
-- `POST /login` - SQL injection
-- `GET /account?id=<id>` - IDOR
-- `GET /transaction/:id` - IDOR
-- `POST /transfer` - transferencia abierta sin autorización
-- `GET /api/ssrf?url=<url>` - SSRF
-- `GET /api/dos?iterations=<n>` - endpoint de cálculo pesado para DDoS
-- `GET /api/profile` - cookie insegura y sesión expuesta
-
-> Esta aplicación es intencionalmente insegura y sólo debe usarse en entornos de pruebas locales.
