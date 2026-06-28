@@ -10,12 +10,12 @@
 <div class="wrapper">
 
   <nav class="topbar">
-    <a class="brand" href="dashboard.html">🏦 Falsoniac Bank</a>
+    <a class="brand" href="/dashboard">🏦 Falsoniac Bank</a>
     <div class="nav-links">
-      <a href="transfer.html">Transferir</a>
-      <a href="movements.html">Movimientos</a>
-      <a href="profile.html">Mi perfil</a>
-      <a href="tools.html">Herramientas</a>
+      <a href="/transfer">Transferir</a>
+      <a href="/movements">Movimientos</a>
+      <a href="/profile">Mi perfil</a>
+      <a href="/tools">Herramientas</a>
       <a href="/logout">Cerrar sesión</a>
     </div>
   </nav>
@@ -46,9 +46,9 @@
     <div class="card">
       <h2>Acceso rápido</h2>
       <div style="display:flex;flex-direction:column;gap:10px;">
-        <a href="transfer.html"  class="btn btn-primary btn-sm">💸 Nueva transferencia</a>
-        <a href="movements.html" class="btn btn-secondary btn-sm">📋 Ver movimientos</a>
-        <a href="profile.html"   class="btn btn-secondary btn-sm">👤 Editar perfil</a>
+        <a href="/transfer"  class="btn btn-primary btn-sm">💸 Nueva transferencia</a>
+        <a href="/movements" class="btn btn-secondary btn-sm">📋 Ver movimientos</a>
+        <a href="/profile"   class="btn btn-secondary btn-sm">👤 Editar perfil</a>
       </div>
     </div>
     <div class="card">
@@ -61,7 +61,7 @@
 <script>
   async function loadDashboard() {
     const res  = await fetch('/user-info');
-    if (!res.ok) { window.location.href = '/login.html'; return; }
+    if (!res.ok) { window.location.href = '/login'; return; }
     const data = await res.json();
 
     document.getElementById('userName').textContent  = data.user.username;

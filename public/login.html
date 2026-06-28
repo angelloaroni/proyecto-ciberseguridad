@@ -10,7 +10,7 @@
 <div class="wrapper" style="max-width:480px;">
 
   <div style="text-align:center;margin-bottom:24px;">
-    <a href="index.html" style="font-size:1.5rem;font-weight:800;color:#1d4ed8;">🏦 Falsoniac Bank</a>
+    <a href="/" style="font-size:1.5rem;font-weight:800;color:#1d4ed8;">🏦 Falsoniac Bank</a>
   </div>
 
   <div class="card">
@@ -48,7 +48,7 @@
   </div>
 
   <p style="text-align:center;margin-top:16px;font-size:.85rem;">
-    ¿No tienes cuenta? <a href="register.html">Abre la tuya gratis</a>
+    ¿No tienes cuenta? <a href="/register">Abre la tuya gratis</a>
   </p>
 
 </div>
@@ -74,7 +74,7 @@
     const body = await res.json();
 
     if (res.ok && body.success) {
-      window.location.href = '/dashboard.html';
+      window.location.href = '/dashboard';
     } else {
       alertEl.textContent = body.error || 'Error al iniciar sesión.';
       alertEl.className   = 'alert alert-error visible';

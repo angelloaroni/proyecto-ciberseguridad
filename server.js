@@ -12,8 +12,6 @@
  *  [4] DDoS           — /api/report (sin rate-limit ni throttle)
  *  [5] MITM           — Cookies sin Secure ni HttpOnly; HTTP plano; CORS abierto
  *
- * Configuración de conexión MySQL — editar las variables de entorno o el
- * objeto `dbConfig` a continuación antes de ejecutar.
  * =============================================================================
  */
 
@@ -29,8 +27,6 @@ const PORT = process.env.PORT || 3000;
 
 // =============================================================================
 // CONFIGURACIÓN DE BASE DE DATOS MYSQL
-// Puedes sobreescribir cualquier valor con variables de entorno:
-//   DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME
 // =============================================================================
 const dbConfig = {
   host:     process.env.DB_HOST     || 'localhost',
@@ -43,18 +39,10 @@ const dbConfig = {
   queueLimit:         0
 };
 
-// Pool de conexiones MySQL
 const pool = mysql.createPool(dbConfig);
 
-/**
- * Ejecuta una query y devuelve una Promise con las filas.
- * Se usa pool.query directamente (sin prepared statements)
- * para mantener las vulnerabilidades de SQLi intactas.
- */
 function query(sql, params) {
   return new Promise((resolve, reject) => {
-    // NOTA: cuando `params` está presente se usa interpolación manual
-    // para conservar la vulnerabilidad SQLi; NO se usan placeholders.
     pool.query(sql, (err, results) => {
       if (err) return reject(err);
       resolve(results);
@@ -71,7 +59,7 @@ app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 app.use(cookieParser());
 
-// [VULN-MITM] CORS completamente abierto — permite peticiones desde cualquier origen.
+// [VULN-MITM] CORS completamente abierto
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
@@ -80,17 +68,34 @@ app.use((req, res, next) => {
 });
 
 // =============================================================================
-// RUTAS
+// ROUTING DE PÁGINAS — URLs limpias sin .html
+// =============================================================================
+
+app.get('/',          (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+app.get('/login',     (req, res) => res.sendFile(path.join(__dirname, 'public', 'login.html')));
+app.get('/register',  (req, res) => res.sendFile(path.join(__dirname, 'public', 'register.html')));
+app.get('/dashboard', (req, res) => res.sendFile(path.join(__dirname, 'public', 'dashboard.html')));
+app.get('/profile',   (req, res) => res.sendFile(path.join(__dirname, 'public', 'profile.html')));
+app.get('/movements', (req, res) => {
+  // Si tiene query param account_id es una petición API, si no es la página
+  if (req.query.account_id) {
+    return movementsAPI(req, res);
+  }
+  res.sendFile(path.join(__dirname, 'public', 'movements.html'));
+});
+app.get('/transfer',  (req, res) => res.sendFile(path.join(__dirname, 'public', 'transfer.html')));
+app.get('/tools',     (req, res) => res.sendFile(path.join(__dirname, 'public', 'tools.html')));
+
+// =============================================================================
+// RUTAS API
 // =============================================================================
 
 // ─── Login ───────────────────────────────────────────────────────────────────
-// [VULN-SQLi] La query se construye con concatenación directa de strings.
-// Payload: usuario = ' OR '1'='1' -- (bypassea autenticación)
+// [VULN-SQLi] Concatenación directa — vulnerable a SQL Injection
 app.post('/login', async (req, res) => {
   const username = req.body.username || '';
   const password = req.body.password || '';
 
-  // ⚠ Concatenación directa — vulnerable a SQL Injection
   const sql = `SELECT * FROM users WHERE username = '${username}' AND password = '${password}'`;
 
   try {
@@ -99,10 +104,10 @@ app.post('/login', async (req, res) => {
 
     if (!user) return res.status(401).json({ error: 'Usuario o contraseña incorrectos.' });
 
-    // [VULN-MITM] Cookie sin Secure ni HttpOnly → interceptable en HTTP y legible desde JS
+    // [VULN-MITM] Cookie sin Secure ni HttpOnly
     res.cookie('falsoniac_session', user.username, {
-      httpOnly: false,  // JS puede leerla → XSS viable
-      secure:   false,  // Sin TLS → MITM viable
+      httpOnly: false,
+      secure:   false,
       sameSite: 'Lax'
     });
 
@@ -112,12 +117,12 @@ app.post('/login', async (req, res) => {
   }
 });
 
-// ─── Información del usuario autenticado ─────────────────────────────────────
+// ─── Info del usuario autenticado ────────────────────────────────────────────
 app.get('/user-info', async (req, res) => {
   const username = req.cookies.falsoniac_session || '';
   if (!username) return res.status(401).json({ error: 'Sin sesión activa.' });
 
-  // [VULN-SQLi] username viene de la cookie sin validar
+  // [VULN-SQLi]
   const userSql = `SELECT id, username, role, email, phone FROM users WHERE username = '${username}'`;
 
   try {
@@ -135,13 +140,11 @@ app.get('/user-info', async (req, res) => {
 });
 
 // ─── Ver cuenta por ID ────────────────────────────────────────────────────────
-// [VULN-IDOR] No se verifica que la cuenta pertenezca al usuario en sesión.
-// [VULN-SQLi] El parámetro id se interpola directamente en la query.
+// [VULN-IDOR + SQLi]
 app.get('/account', async (req, res) => {
   const accountId = req.query.id;
   if (!accountId) return res.status(400).json({ error: 'Falta parámetro id.' });
 
-  // ⚠ Sin verificación de ownership y sin parametrizar
   const sql = `SELECT a.id, u.username, a.balance, a.label, a.type
                FROM accounts a JOIN users u ON a.user_id = u.id
                WHERE a.id = ${accountId}`;
@@ -156,13 +159,12 @@ app.get('/account', async (req, res) => {
   }
 });
 
-// ─── Movimientos de una cuenta ────────────────────────────────────────────────
-// [VULN-IDOR] Sin verificación de que la cuenta pertenece al usuario.
-app.get('/movements', async (req, res) => {
+// ─── Movimientos de una cuenta (API) ─────────────────────────────────────────
+// [VULN-IDOR]
+async function movementsAPI(req, res) {
   const accountId = req.query.account_id;
   if (!accountId) return res.status(400).json({ error: 'Falta account_id.' });
 
-  // ⚠ Sin parametrizar y sin chequeo de ownership
   const sql = `SELECT id, amount, note, created_at FROM transactions
                WHERE account_id = ${accountId} ORDER BY id DESC`;
 
@@ -172,7 +174,7 @@ app.get('/movements', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: 'Error al obtener movimientos.', detail: err.message });
   }
-});
+}
 
 // ─── Transacción individual ───────────────────────────────────────────────────
 // [VULN-IDOR + SQLi]
@@ -194,8 +196,7 @@ app.get('/transaction/:id', async (req, res) => {
 });
 
 // ─── Transferencia ────────────────────────────────────────────────────────────
-// [VULN-IDOR] No se verifica que `from` pertenezca al usuario autenticado.
-// [VULN-DoS]  Sin rate-limit ni validación de monto máximo.
+// [VULN-IDOR + DoS]
 app.post('/transfer', async (req, res) => {
   const from   = req.body.from   || req.query.from;
   const to     = req.body.to     || req.query.to;
@@ -207,7 +208,6 @@ app.post('/transfer', async (req, res) => {
   }
 
   try {
-    // ⚠ Sin verificar ownership de `from`; sin transacción atómica protegida
     await query(`UPDATE accounts SET balance = balance - ${amount} WHERE id = ${from}`);
     await query(`UPDATE accounts SET balance = balance + ${amount} WHERE id = ${to}`);
     await query(`INSERT INTO transactions (account_id, amount, note) VALUES (${from}, -${amount}, '${note}')`);
@@ -219,14 +219,12 @@ app.post('/transfer', async (req, res) => {
   }
 });
 
-// ─── Tipo de cambio / SSRF ────────────────────────────────────────────────────
-// [VULN-SSRF] El servidor solicita cualquier URL que el usuario indique,
-// permitiendo acceso a recursos internos (localhost, 169.254.169.254, etc.).
+// ─── SSRF ────────────────────────────────────────────────────────────────────
+// [VULN-SSRF]
 app.get('/api/fetch-rate', async (req, res) => {
   const source = req.query.source;
   if (!source) return res.status(400).json({ error: 'Falta parámetro source.' });
 
-  // ⚠ Sin validación de dominio — SSRF directo
   try {
     const response = await axios.get(source, { timeout: 5000, responseType: 'text' });
     res.json({ url: source, data: response.data });
@@ -235,13 +233,11 @@ app.get('/api/fetch-rate', async (req, res) => {
   }
 });
 
-// ─── Reporte del sistema / DoS ────────────────────────────────────────────────
-// [VULN-DoS] Bucle síncrono bloqueante en el event loop de Node.js.
-// Sin rate-limit: peticiones masivas paralizan el servidor.
+// ─── DoS ─────────────────────────────────────────────────────────────────────
+// [VULN-DoS]
 app.get('/api/report', (req, res) => {
   const depth = parseInt(req.query.depth, 10) || 5000000;
 
-  // ⚠ Cálculo síncrono — bloquea el event loop mientras se ejecuta
   let total = 0;
   for (let i = 0; i < depth; i++) {
     total += Math.sqrt(i) * Math.sin(i);
@@ -251,7 +247,7 @@ app.get('/api/report', (req, res) => {
 });
 
 // ─── Perfil de sesión ─────────────────────────────────────────────────────────
-// [VULN-MITM] Expone el valor de la cookie en texto plano como respuesta JSON.
+// [VULN-MITM]
 app.get('/api/profile', (req, res) => {
   const session = req.cookies.falsoniac_session || 'sin sesión';
   res.json({
@@ -263,7 +259,7 @@ app.get('/api/profile', (req, res) => {
 // ─── Logout ───────────────────────────────────────────────────────────────────
 app.get('/logout', (req, res) => {
   res.clearCookie('falsoniac_session');
-  res.redirect('/login.html');
+  res.redirect('/login');
 });
 
 // =============================================================================
@@ -280,5 +276,14 @@ pool.getConnection((err, connection) => {
   app.listen(PORT, () => {
     console.log(`🏦  Falsoniac Bank escuchando en http://localhost:${PORT}`);
     console.log(`⚠   Aplicación VULNERABLE — solo uso académico\n`);
+    console.log('Rutas disponibles:');
+    console.log(`  http://localhost:${PORT}/`);
+    console.log(`  http://localhost:${PORT}/login`);
+    console.log(`  http://localhost:${PORT}/register`);
+    console.log(`  http://localhost:${PORT}/dashboard`);
+    console.log(`  http://localhost:${PORT}/profile`);
+    console.log(`  http://localhost:${PORT}/movements`);
+    console.log(`  http://localhost:${PORT}/transfer`);
+    console.log(`  http://localhost:${PORT}/tools`);
   });
 });
