@@ -23,13 +23,12 @@
 
     <form id="transferForm">
 
-      <label>
-        Cuenta de origen (ID)
-        <!-- [IDOR] No se verifica que este ID pertenezca al usuario autenticado.
-             Cualquier usuario puede poner from=5 y vaciar la cuenta Admin. -->
-        <input type="text" name="from" placeholder="Ej. 1" required/>
-        <p class="hint">⚠ [IDOR] El servidor no verifica que la cuenta origen pertenezca al usuario en sesión. Prueba con <code>from=5</code> (cuenta VIP Admin).</p>
-      </label>
+      <!-- [VULN-IDOR] El id de la cuenta de origen se autocompleta con la
+           cuenta del usuario en sesión, pero viaja como un input oculto
+           que el usuario puede editar desde las DevTools o interceptando
+           la petición. El servidor tampoco valida que "from" pertenezca
+           al usuario autenticado, así que el IDOR sigue existiendo. -->
+      <input type="hidden" name="from" id="fromInput"/>
 
       <label>
         Cuenta de destino (ID)
@@ -41,7 +40,6 @@
         <!-- [DoS] Sin límite de monto ni rate-limit: enviar miles de
              peticiones simultáneas colapsa el event loop de Node.js. -->
         <input type="number" name="amount" placeholder="0.00" min="0.01" step="0.01" required/>
-        <p class="hint">⚠ [DoS] No hay rate-limit en este endpoint. Enviar ráfagas masivas de solicitudes puede saturar el servidor.</p>
       </label>
 
       <label>
@@ -67,13 +65,24 @@
       </label>
       <button type="submit" class="btn btn-secondary btn-sm" style="align-self:flex-end;">Consultar</button>
     </form>
-    <p class="hint" style="margin-top:10px;">⚠ [IDOR] <code>/account?id=X</code> no requiere que la cuenta sea tuya. Prueba IDs del 1 al 5.</p>
     <pre class="result-box" id="accountResult"></pre>
   </div>
 
 </div>
 <script>
   const alertEl = document.getElementById('alertMsg');
+
+  // Autocompleta la cuenta de origen con la cuenta principal del usuario
+  // en sesión (sin pedírsela nunca por UI).
+  async function fillMyAccount() {
+    const res = await fetch('/user-info');
+    if (!res.ok) { window.location.href = '/login'; return; }
+    const data = await res.json();
+    if (data.accounts.length) {
+      document.getElementById('fromInput').value = data.accounts[0].id;
+    }
+  }
+  fillMyAccount();
 
   document.getElementById('transferForm').addEventListener('submit', async e => {
     e.preventDefault();

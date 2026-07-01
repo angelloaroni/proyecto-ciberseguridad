@@ -84,7 +84,6 @@ app.get('/movements', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'movements.html'));
 });
 app.get('/transfer',  (req, res) => res.sendFile(path.join(__dirname, 'public', 'transfer.html')));
-app.get('/tools',     (req, res) => res.sendFile(path.join(__dirname, 'public', 'tools.html')));
 
 // =============================================================================
 // RUTAS API
@@ -285,6 +284,5 @@ pool.getConnection((err, connection) => {
     console.log(`  http://localhost:${PORT}/profile`);
     console.log(`  http://localhost:${PORT}/movements`);
     console.log(`  http://localhost:${PORT}/transfer`);
-    console.log(`  http://localhost:${PORT}/tools`);
   });
 });
