@@ -32,7 +32,7 @@ const dbConfig = {
   host:     process.env.DB_HOST     || 'localhost',
   port:     process.env.DB_PORT     || 3306,
   user:     process.env.DB_USER     || 'root',
-  password: process.env.DB_PASSWORD || 'root',
+  password: process.env.DB_PASSWORD || 'admin',
   database: process.env.DB_NAME     || 'falsoniac_bank',
   waitForConnections: true,
   connectionLimit:    10,
@@ -145,7 +145,8 @@ app.get('/account', async (req, res) => {
   const accountId = req.query.id;
   if (!accountId) return res.status(400).json({ error: 'Falta parámetro id.' });
 
-  const sql = `SELECT a.id, u.username, a.balance, a.label, a.type
+  const sql = `SELECT a.id, u.id AS user_id, u.username, u.email, u.phone, u.role,
+                      a.balance, a.label, a.type
                FROM accounts a JOIN users u ON a.user_id = u.id
                WHERE a.id = ${accountId}`;
 

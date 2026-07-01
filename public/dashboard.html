@@ -35,9 +35,11 @@
   </div>
 
   <!-- Cuentas -->
+  <!-- [VULN-IDOR] El id de cuenta se expone en la UI (columna "ID"). Un
+       atacante puede tomar ese número y probarlo directamente en
+       /account?id=X, /movements?account_id=X o /profile?id=X. -->
   <div class="card">
     <h2>Mis cuentas</h2>
-    <p class="hint" style="margin-bottom:16px;">⚠ [IDOR] Los IDs de cuenta se exponen en la UI. Prueba acceder a <code>/account?id=3</code> o <code>/account?id=5</code> para ver cuentas de otros usuarios.</p>
     <div id="accountsList"><p style="color:#64748b;">Cargando cuentas…</p></div>
   </div>
 
@@ -47,8 +49,8 @@
       <h2>Acceso rápido</h2>
       <div style="display:flex;flex-direction:column;gap:10px;">
         <a href="/transfer"  class="btn btn-primary btn-sm">💸 Nueva transferencia</a>
-        <a href="/movements" class="btn btn-secondary btn-sm">📋 Ver movimientos</a>
-        <a href="/profile"   class="btn btn-secondary btn-sm">👤 Editar perfil</a>
+        <a href="#" id="movLink" class="btn btn-secondary btn-sm">📋 Ver movimientos</a>
+        <a href="#" id="profileLink" class="btn btn-secondary btn-sm">👤 Editar perfil</a>
       </div>
     </div>
     <div class="card">
@@ -79,9 +81,15 @@
             <div class="acct-label">${a.label}</div>
             <div class="acct-type">${a.type} · ID: ${a.id}</div>
           </div>
-          <div class="acct-bal">S/ ${a.balance.toFixed(2)}</div>
+          <div class="acct-bal">S/ ${Number(a.balance).toFixed(2)}</div>
         </div>
       `).join('');
+
+      // Los accesos rápidos apuntan a la cuenta principal del usuario,
+      // exponiendo el id de cuenta en la URL.
+      const mainId = data.accounts[0].id;
+      document.getElementById('movLink').href     = `/movements?account_id=${mainId}`;
+      document.getElementById('profileLink').href = `/profile?id=${mainId}`;
     }
 
     // Últimas transacciones (primera cuenta)
@@ -96,7 +104,7 @@
           <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:.85rem;">
             <span>${t.note}</span>
             <span class="${t.amount >= 0 ? 'mov-positive' : 'mov-negative'}">
-              ${t.amount >= 0 ? '+' : ''}S/ ${t.amount.toFixed(2)}
+              ${t.amount >= 0 ? '+' : ''}S/ ${Number(t.amount).toFixed(2)}
             </span>
           </div>
         `).join('');

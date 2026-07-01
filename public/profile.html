@@ -25,51 +25,49 @@
       <div class="profile-row"><span class="profile-key">Email</span><span class="profile-val" id="pEmail">—</span></div>
       <div class="profile-row"><span class="profile-key">Teléfono</span><span class="profile-val" id="pPhone">—</span></div>
       <div class="profile-row"><span class="profile-key">Rol</span><span class="profile-val" id="pRole">—</span></div>
-      <div class="profile-row"><span class="profile-key">ID interno</span><span class="profile-val" id="pId">—</span></div>
+      <div class="profile-row"><span class="profile-key">Cuenta</span><span class="profile-val" id="pLabel">—</span></div>
+      <div class="profile-row"><span class="profile-key">Saldo</span><span class="profile-val" id="pBalance">—</span></div>
+      <div class="profile-row"><span class="profile-key">ID de cuenta</span><span class="profile-val" id="pId">—</span></div>
     </div>
 
     <hr style="margin:20px 0;border:none;border-top:1px solid #e2e8f0;"/>
 
     <!-- Cookie de sesión visible -->
+    <!-- [VULN-MITM] La cookie de sesión viaja por HTTP sin TLS y es accesible vía JS porque httpOnly=false -->
     <h2 style="margin-bottom:10px;font-size:1rem;">Información de sesión</h2>
-    <p class="hint" style="margin-bottom:12px;">
-      ⚠ [MITM] La cookie de sesión viaja por HTTP sin TLS y puede ser interceptada.
-      Su valor es accesible desde JavaScript porque <code>httpOnly=false</code>.<br/>
-      Valor actual: <code id="cookieVal"></code>
-    </p>
     <button class="btn btn-secondary btn-sm" onclick="checkSession()">Verificar sesión en servidor</button>
     <pre class="result-box" id="sessionResult"></pre>
   </div>
 
-  <!-- Bloque IDOR de perfil por ID -->
-  <div class="card">
-    <h2>Buscar usuario por ID</h2>
-    <p style="font-size:.88rem;color:#64748b;margin-bottom:14px;">
-      Esta función permite que soporte técnico verifique el estado de cualquier cuenta.
-    </p>
-    <form id="accountLookup" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
-      <label style="flex:1;min-width:140px;">
-        ID de cuenta
-        <input type="text" name="acctId" placeholder="1, 2, 3…"/>
-        <p class="hint">⚠ [IDOR] Ningún control de autorización impide que cualquier usuario consulte cuentas ajenas.</p>
-      </label>
-      <button type="submit" class="btn btn-secondary btn-sm" style="align-self:flex-end;">Buscar</button>
-    </form>
-    <pre class="result-box" id="lookupResult"></pre>
-  </div>
-
 </div>
 <script>
-  async function loadProfile() {
-    const res  = await fetch('/user-info');
-    if (!res.ok) { window.location.href = '/login'; return; }
+  // [VULN-IDOR] El perfil que se muestra depende únicamente del parámetro
+  // ?id= en la URL. El servidor (/account?id=X) no valida que la cuenta
+  // pertenezca al usuario autenticado, así que cambiar el id en la barra
+  // de direcciones permite ver el perfil de cualquier otra cuenta.
+  async function resolveMyAccountId() {
+    const res = await fetch('/user-info');
+    if (!res.ok) { window.location.href = '/login'; return null; }
     const data = await res.json();
-    document.getElementById('pUser').textContent  = data.user.username;
-    document.getElementById('pEmail').textContent = data.user.email  || '—';
-    document.getElementById('pPhone').textContent = data.user.phone  || '—';
-    document.getElementById('pRole').textContent  = data.user.role;
-    document.getElementById('pId').textContent    = data.user.id;
-    document.getElementById('cookieVal').textContent = document.cookie || '(vacía)';
+    if (!data.accounts.length) return null;
+    return data.accounts[0].id;
+  }
+
+  async function loadAccount(id) {
+    const res = await fetch(`/account?id=${encodeURIComponent(id)}`);
+    if (!res.ok) {
+      document.getElementById('profileInfo').innerHTML =
+        '<p style="color:#dc2626;">No se encontró esa cuenta.</p>';
+      return;
+    }
+    const acct = await res.json();
+    document.getElementById('pUser').textContent    = acct.username;
+    document.getElementById('pEmail').textContent    = acct.email   || '—';
+    document.getElementById('pPhone').textContent    = acct.phone   || '—';
+    document.getElementById('pRole').textContent     = acct.role;
+    document.getElementById('pLabel').textContent    = acct.label;
+    document.getElementById('pBalance').textContent  = `S/ ${Number(acct.balance).toFixed(2)}`;
+    document.getElementById('pId').textContent       = acct.id;
   }
 
   async function checkSession() {
@@ -79,16 +77,22 @@
     pre.classList.add('visible');
   }
 
-  document.getElementById('accountLookup').addEventListener('submit', async e => {
-    e.preventDefault();
-    const id  = e.target.acctId.value;
-    const res = await fetch(`/account?id=${encodeURIComponent(id)}`);
-    const pre = document.getElementById('lookupResult');
-    pre.textContent = JSON.stringify(await res.json(), null, 2);
-    pre.classList.add('visible');
-  });
+  async function init() {
+    const params = new URLSearchParams(window.location.search);
+    let id = params.get('id');
 
-  loadProfile();
+    if (!id) {
+      id = await resolveMyAccountId();
+      if (!id) return;
+      // Refleja el id en la URL sin recargar la página
+      const newUrl = `${window.location.pathname}?id=${id}`;
+      window.history.replaceState({}, '', newUrl);
+    }
+
+    loadAccount(id);
+  }
+
+  init();
 </script>
 </body>
 </html>

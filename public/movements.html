@@ -20,18 +20,7 @@
 
   <div class="card">
     <h1 style="margin-bottom:6px;">Historial de movimientos</h1>
-    <p style="color:#64748b;font-size:.9rem;margin-bottom:20px;">Consulta los movimientos de cualquier cuenta.</p>
-
-    <form id="movForm" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:20px;">
-      <label style="flex:1;min-width:180px;">
-        ID de cuenta
-        <!-- [IDOR] Sin verificar ownership: cualquier usuario puede consultar
-             movimientos de cuentas ajenas cambiando el account_id. -->
-        <input type="text" name="account_id" placeholder="Ej. 1" required/>
-        <p class="hint">⚠ [IDOR] <code>/movements?account_id=X</code> no valida que la cuenta sea tuya. Prueba con IDs del 1 al 5.</p>
-      </label>
-      <button type="submit" class="btn btn-primary btn-sm" style="align-self:flex-end;">Ver movimientos</button>
-    </form>
+    <p style="color:#64748b;font-size:.9rem;margin-bottom:20px;" id="acctLabel">Cargando…</p>
 
     <div class="table-wrap">
       <table id="movTable" style="display:none;">
@@ -49,59 +38,65 @@
     <div class="alert" id="alertMsg"></div>
   </div>
 
-  <!-- Consulta de transacción individual -->
-  <div class="card">
-    <h2>Consultar transacción por ID</h2>
-    <form id="txForm" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
-      <label style="flex:1;min-width:140px;">
-        ID de transacción
-        <input type="text" name="txid" placeholder="Ej. 1"/>
-        <p class="hint">⚠ [IDOR] <code>/transaction/:id</code> expone cualquier transacción del banco sin validar pertenencia.</p>
-      </label>
-      <button type="submit" class="btn btn-secondary btn-sm" style="align-self:flex-end;">Consultar</button>
-    </form>
-    <pre class="result-box" id="txResult"></pre>
-  </div>
-
 </div>
 <script>
-  document.getElementById('movForm').addEventListener('submit', async e => {
-    e.preventDefault();
-    const id  = e.target.account_id.value;
-    const res = await fetch(`/movements?account_id=${encodeURIComponent(id)}`);
+  // [VULN-IDOR] La cuenta cuyos movimientos se muestran depende únicamente
+  // del parámetro ?account_id= en la URL. El servidor no valida ownership,
+  // así que cambiar el id en la barra de direcciones expone movimientos
+  // de cualquier otra cuenta. Cada fila de la tabla también enlaza a
+  // /transaction/:id, que tiene el mismo problema a nivel de transacción.
+  async function resolveMyAccountId() {
+    const res = await fetch('/user-info');
+    if (!res.ok) { window.location.href = '/login'; return null; }
+    const data = await res.json();
+    if (!data.accounts.length) return null;
+    return data.accounts[0].id;
+  }
+
+  async function loadMovements(accountId) {
+    const res  = await fetch(`/movements?account_id=${encodeURIComponent(accountId)}`);
     const data = await res.json();
 
     const alertEl = document.getElementById('alertMsg');
     if (!res.ok) {
       alertEl.textContent = data.error;
       alertEl.className   = 'alert alert-error visible';
+      document.getElementById('acctLabel').textContent = 'No se pudo cargar la cuenta.';
       return;
     }
     alertEl.className = 'alert';
+    document.getElementById('acctLabel').textContent = `Cuenta #${accountId}`;
 
     const table = document.getElementById('movTable');
     const tbody = document.getElementById('movBody');
     tbody.innerHTML = data.map(t => `
       <tr>
-        <td>${t.id}</td>
+        <td><a href="/transaction/${t.id}" target="_blank">${t.id}</a></td>
         <td>${t.note}</td>
         <td class="${t.amount >= 0 ? 'mov-positive' : 'mov-negative'}">
-          ${t.amount >= 0 ? '+' : ''}S/ ${t.amount.toFixed(2)}
+          ${t.amount >= 0 ? '+' : ''}S/ ${Number(t.amount).toFixed(2)}
         </td>
         <td style="font-size:.8rem;color:#64748b;">${t.created_at || '—'}</td>
       </tr>
     `).join('');
     table.style.display = 'table';
-  });
+  }
 
-  document.getElementById('txForm').addEventListener('submit', async e => {
-    e.preventDefault();
-    const id  = e.target.txid.value;
-    const res = await fetch(`/transaction/${encodeURIComponent(id)}`);
-    const pre = document.getElementById('txResult');
-    pre.textContent = JSON.stringify(await res.json(), null, 2);
-    pre.classList.add('visible');
-  });
+  async function init() {
+    const params = new URLSearchParams(window.location.search);
+    let accountId = params.get('account_id');
+
+    if (!accountId) {
+      accountId = await resolveMyAccountId();
+      if (!accountId) return;
+      const newUrl = `${window.location.pathname}?account_id=${accountId}`;
+      window.history.replaceState({}, '', newUrl);
+    }
+
+    loadMovements(accountId);
+  }
+
+  init();
 </script>
 </body>
 </html>
