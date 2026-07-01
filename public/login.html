@@ -15,7 +15,8 @@
 
   <div class="card">
     <h1 style="margin-bottom:4px;">Bienvenido</h1>
-    <p style="color:#64748b;margin-bottom:24px;font-size:.9rem;">Ingresa tus credenciales para acceder a tu banca en línea.</p>
+    <p style="color:#64748b;margin-bottom:8px;font-size:.9rem;">Ingresa tus credenciales para acceder a tu banca en línea.</p>
+    <p style="color:#64748b;margin-bottom:20px;font-size:.85rem;line-height:1.6;">Este formulario está pensado para el laboratorio y sirve para probar el flujo de acceso con las cuentas de muestra.</p>
 
     <form id="loginForm">
 
@@ -25,13 +26,11 @@
              SELECT * FROM users WHERE username = '{input}' AND password = '...'
              Prueba: alice' - -   o   ' OR '1'='1 -->
         <input type="text" name="username" autocomplete="username" placeholder="Ej. alice"/>
-        <p class="hint">⚠ [SQL Injection] El campo no es sanitizado. Prueba: <code>' OR '1'='1</code> como usuario (con cualquier contraseña).</p>
       </label>
 
       <label>
         Contraseña
         <input type="password" name="password" autocomplete="current-password" placeholder="••••••••"/>
-        <p class="hint">⚠ [MITM] La cookie de sesión se envía por HTTP sin cifrar y con <code>httpOnly:false</code>, legible desde JavaScript.</p>
       </label>
 
       <button type="submit" class="btn btn-primary btn-full">Iniciar sesión</button>
